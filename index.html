@@ -85,10 +85,10 @@
             <input type="email" id="authEmail" placeholder="Email Address">
             <input type="password" id="authPassword" placeholder="Password">
             
-            <button id="authSubmitBtn" onclick="handleAuthSubmit()">Log In</button>
-            <p class="switch-text" id="authSwitch" onclick="toggleAuthMode()">Need an account? Sign Up</p>
+            <button id="authSubmitBtn" onclick="window.handleAuthSubmit()">Log In</button>
+            <p class="switch-text" id="authSwitch" onclick="window.toggleAuthMode()">Need an account? Sign Up</p>
             
-            <button class="btn-guest" onclick="enableGuestMode()">Use Local Mode (No Account)</button>
+            <button class="btn-guest" onclick="window.enableGuestMode()">Use Local Mode (No Account)</button>
         </div>
     </div>
 
@@ -97,14 +97,14 @@
             <h1>Heist & Cooldown Dashboard</h1>
             <div class="user-menu">
                 <span class="user-email" id="userEmailDisplay">loading...</span>
-                <button class="btn-logout" onclick="handleLogout()">Logout</button>
+                <button class="btn-logout" onclick="window.handleLogout()">Logout</button>
             </div>
         </header>
         
         <div class="timer-grid" id="timerGrid"></div>
 
         <div class="controls-dock">
-            <button class="btn-round" onclick="addCustomTimer()">+</button>
+            <button class="btn-round" onclick="window.addCustomTimer()">+</button>
         </div>
     </div>
 
@@ -112,8 +112,8 @@
         // ==========================================
         // INSERT YOUR SUPABASE CREDENTIALS HERE
         // ==========================================
-        const SUPABASE_URL = "https://lydixypywrexclanqbsz.supabase.co"; 
-        const SUPABASE_ANON_KEY = "sb_publishable_-B5-wPmYwuUC7oQ3E6zJNw_KsDjnKBU";
+        const SUPABASE_URL = ""; 
+        const SUPABASE_ANON_KEY = "";
 
         let supabase = null;
         let currentUser = null;
@@ -135,20 +135,20 @@
             { id: "dre", name: "Dr Dre", duration: 48 * 60 }
         ];
 
-        // Initialize App
+        // Safely Initialize App
         try {
             if (SUPABASE_URL && SUPABASE_ANON_KEY) {
                 supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 checkUserSession();
             } else {
-                console.log("No Supabase configuration detected. Running in local/guest mode.");
+                console.log("No Supabase configuration detected. Ready for local/guest mode.");
             }
         } catch (e) {
             console.error("Initialization error:", e);
         }
 
         // Toggle Auth layout styles
-        function toggleAuthMode() {
+        window.toggleAuthMode = function() {
             isSignUpMode = !isSignUpMode;
             document.getElementById('authTitle').textContent = isSignUpMode ? "Create Account" : "Secure Cooldowns";
             document.getElementById('authSubtitle').textContent = isSignUpMode ? "Register to save your private timers" : "Log in to manage your private timers";
@@ -157,9 +157,9 @@
         }
 
         // Handle Signup / Login submissions
-        async function handleAuthSubmit() {
+        window.handleAuthSubmit = async function() {
             if (!supabase) {
-                alert("Cannot connect to database! Please make sure you entered your SUPABASE_URL and SUPABASE_ANON_KEY correctly inside index.html.");
+                alert("Database configuration missing! Enter your SUPABASE_URL and SUPABASE_ANON_KEY inside index.html to create cloud accounts.");
                 return;
             }
 
@@ -186,12 +186,12 @@
                     }
                 }
             } catch (e) {
-                alert("An unexpected error occurred during auth: " + e.message);
+                alert("An unexpected error occurred: " + e.message);
             }
         }
 
         // Guest / Local Mode Backup System
-        function enableGuestMode() {
+        window.enableGuestMode = function() {
             isGuestMode = true;
             document.getElementById('userEmailDisplay').textContent = "Guest Mode (Local)";
             document.getElementById('authScreen').style.display = 'none';
@@ -220,7 +220,7 @@
             render();
         }
 
-        async function handleLogout() {
+        window.handleLogout = async function() {
             if (isGuestMode) {
                 isGuestMode = false;
             } else if (supabase) {
@@ -335,15 +335,15 @@
                             <span class="timer-name">${t.name}</span>
                             <div class="header-right">
                                 <span class="status-badge">${status === 'Inactive' && t.timeLeft < t.totalDuration ? 'Paused' : status}</span>
-                                <button class="btn-delete" onclick="deleteTimer('${id}')" title="Delete Timer">🗑</button>
+                                <button class="btn-delete" onclick="window.deleteTimer('${id}')" title="Delete Timer">🗑</button>
                             </div>
                         </div>
                         <div class="time-display" id="time-${id}">${formatTime(remaining)}</div>
                     </div>
                     <div>
                         <div class="card-actions">
-                            <button class="btn-action" onclick="toggleTimer('${id}')">${status === 'Running' ? 'Pause' : 'Start'}</button>
-                            <button class="btn-action" onclick="resetTimer('${id}')">Reset</button>
+                            <button class="btn-action" onclick="window.toggleTimer('${id}')">${status === 'Running' ? 'Pause' : 'Start'}</button>
+                            <button class="btn-action" onclick="window.resetTimer('${id}')">Reset</button>
                         </div>
                         <div class="card-footer">
                             <span>Started: ${t.startedAt}</span>
