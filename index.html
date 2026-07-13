@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Heist & Cooldown Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
             --bg-main: #0f111a;
@@ -12,46 +13,109 @@
             --text-main: #f0f2f5;
             --text-muted: #8a90a6;
             --primary: #4f46e5;
+            --primary-hover: #6366f1;
             --status-inactive: #374151;
             --status-running: #0ca678;
             --status-finished: #f03e3e;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
-        body { background-color: var(--bg-main); color: var(--text-main); padding: 2rem; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
-        .app-container { width: 100%; max-width: 900px; }
-        header { margin-bottom: 2rem; text-align: center; }
-        header h1 { font-size: 1.8rem; font-weight: 700; background: linear-gradient(45deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .timer-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 5rem; }
+        body { background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }
+        
+        /* Gated Auth Screen (Visible by default) */
+        #authScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 400px; }
+        .auth-card { background: var(--bg-card); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 2.5rem 2rem; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        .auth-card h1 { font-size: 1.8rem; margin-bottom: 0.5rem; background: linear-gradient(45deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .auth-card p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; }
+        .auth-card input { width: 100%; padding: 0.8rem 1rem; margin-bottom: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: var(--bg-main); color: var(--text-main); font-size: 0.95rem; outline: none; }
+        .auth-card input:focus { border-color: var(--primary); }
+        .auth-card button { width: 100%; padding: 0.8rem; border-radius: 8px; border: none; background: var(--primary); color: white; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 0.5rem; transition: background 0.2s; }
+        .auth-card button:hover { background: var(--primary-hover); }
+        .switch-text { margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; text-decoration: underline; }
+
+        /* Timer Dashboard (Hidden by default until login) */
+        #dashboardScreen { display: none; width: 100%; max-width: 900px; flex-direction: column; height: 100%; min-height: 90vh; }
+        
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; width: 100%; }
+        header h1 { font-size: 1.6rem; font-weight: 700; background: linear-gradient(45deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        .user-menu { display: flex; gap: 0.75rem; align-items: center; }
+        .user-email { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+        .btn-logout { background: var(--bg-accent); border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.8rem; }
+        .btn-logout:hover { background: #f03e3e; border-color: #f03e3e; }
+
+        /* Grid & Cards */
+        .timer-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 6rem; }
         @media (min-width: 640px) { .timer-grid { grid-template-columns: repeat(2, 1fr); } }
-        .timer-card { background: var(--bg-card); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s; }
+        
+        .timer-card { background: var(--bg-card); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, border-color 0.2s; position: relative; min-height: 200px; }
         .timer-card:hover { transform: translateY(-2px); border-color: rgba(99, 102, 241, 0.4); }
         .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
         .timer-name { font-size: 1.1rem; font-weight: 600; }
+        
+        .header-right { display: flex; align-items: center; gap: 0.75rem; }
         .status-badge { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; padding: 0.25rem 0.6rem; border-radius: 20px; background: var(--status-inactive); }
         .timer-card.running .status-badge { background: var(--status-running); }
         .timer-card.finished .status-badge { background: var(--status-finished); }
+        
+        .btn-delete { background: none; border: none; color: #f03e3e; cursor: pointer; opacity: 0.5; font-size: 1.1rem; transition: opacity 0.2s; padding: 2px; }
+        .btn-delete:hover { opacity: 1; }
+
         .time-display { font-size: 1.75rem; font-weight: 700; font-family: monospace; margin: 0.5rem 0; }
         .card-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
-        .btn-action { flex: 1; background: var(--bg-accent); border: none; color: var(--text-main); padding: 0.5rem; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .btn-action { flex: 1; background: var(--bg-accent); border: none; color: var(--text-main); padding: 0.5rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
         .btn-action:hover { background: var(--primary); }
         .card-footer { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.75rem; }
-        .controls-dock { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: rgba(23, 26, 38, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem 1.5rem; border-radius: 30px; display: flex; align-items: center; gap: 1.5rem; z-index: 100; }
-        .btn-round { background: var(--bg-accent); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-main); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-weight: bold; }
+        
+        /* Floating Add Button */
+        .controls-dock { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: rgba(23, 26, 38, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 0.75rem 1.5rem; border-radius: 30px; display: flex; align-items: center; gap: 1.5rem; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .btn-round { background: var(--bg-accent); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--text-main); width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .btn-round:hover { background: var(--primary); transform: scale(1.05); }
     </style>
 </head>
 <body>
 
-    <div class="app-container">
-        <header><h1>Heist & Cooldown Dashboard</h1></header>
-        <div class="timer-grid" id="timerGrid"></div>
+    <div id="authScreen">
+        <div class="auth-card">
+            <h1 id="authTitle">Secure Cooldowns</h1>
+            <p id="authSubtitle">Log in to manage your private timers</p>
+            
+            <input type="email" id="authEmail" placeholder="Email Address">
+            <input type="password" id="authPassword" placeholder="Password">
+            
+            <button id="authSubmitBtn" onclick="handleAuthSubmit()">Log In</button>
+            <p class="switch-text" id="authSwitch" onclick="toggleAuthMode()">Need an account? Sign Up</p>
+        </div>
     </div>
 
-    <div class="controls-dock">
-        <button class="btn-round" id="addTimerBtn">+</button>
-        <button class="btn-round" id="removeTimerBtn">-</button>
+    <div id="dashboardScreen">
+        <header>
+            <h1>Heist & Cooldown Dashboard</h1>
+            <div class="user-menu">
+                <span class="user-email" id="userEmailDisplay">loading...</span>
+                <button class="btn-logout" onclick="handleLogout()">Logout</button>
+            </div>
+        </header>
+        
+        <div class="timer-grid" id="timerGrid"></div>
+
+        <div class="controls-dock">
+            <button class="btn-round" onclick="addCustomTimer()">+</button>
+        </div>
     </div>
 
     <script>
+        // ==========================================
+        // INSERT YOUR SUPABASE CREDENTIALS HERE
+        // ==========================================
+        const SUPABASE_URL = "https://lydixypywrexclanqbsz.supabase.co"; 
+        const SUPABASE_ANON_KEY = "sb_publishable_-B5-wPmYwuUC7oQ3E6zJNw_KsDjnKBU";
+
+        let supabase = null;
+        let currentUser = null;
+        let isSignUpMode = false;
+        let timerStates = {};
+
+        // Default layout template (assigned to brand new accounts)
         const defaultTimers = [
             { id: "cayo", name: "Cayo", duration: 6 * 3600 },
             { id: "dch", name: "DCH", duration: 6 * 3600 },
@@ -66,7 +130,111 @@
             { id: "dre", name: "Dr Dre", duration: 48 * 60 }
         ];
 
-        let timerStates = JSON.parse(localStorage.getItem('timerStates')) || {};
+        // Boot and configuration check
+        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            checkUserSession();
+        } else {
+            alert("Security Warning: You must supply a valid Supabase URL & Key at the top of the script file to run this gated-account setup!");
+        }
+
+        // Toggle Auth layout styles
+        function toggleAuthMode() {
+            isSignUpMode = !isSignUpMode;
+            document.getElementById('authTitle').textContent = isSignUpMode ? "Create Account" : "Secure Cooldowns";
+            document.getElementById('authSubtitle').textContent = isSignUpMode ? "Register to save your private timers" : "Log in to manage your private timers";
+            document.getElementById('authSubmitBtn').textContent = isSignUpMode ? "Sign Up" : "Log In";
+            document.getElementById('authSwitch').textContent = isSignUpMode ? "Already have an account? Log In" : "Need an account? Sign Up";
+        }
+
+        // Handle Signup / Login submissions
+        async function handleAuthSubmit() {
+            const email = document.getElementById('authEmail').value.trim();
+            const password = document.getElementById('authPassword').value;
+
+            if (!email || !password) {
+                alert("Please fill out all fields.");
+                return;
+            }
+
+            if (isSignUpMode) {
+                const { data, error } = await supabase.auth.signUp({ email, password });
+                if (error) {
+                    alert(error.message);
+                } else {
+                    alert("Registration successful! Check your email for a confirmation link to log in.");
+                }
+            } else {
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) {
+                    alert(error.message);
+                }
+            }
+        }
+
+        async function handleLogout() {
+            await supabase.auth.signOut();
+            timerStates = {};
+            document.getElementById('dashboardScreen').style.display = 'none';
+            document.getElementById('authScreen').style.display = 'flex';
+        }
+
+        // Watch session lifecycle changes
+        function checkUserSession() {
+            supabase.auth.onAuthStateChange(async (event, session) => {
+                if (session) {
+                    currentUser = session.user;
+                    document.getElementById('userEmailDisplay').textContent = currentUser.email;
+                    
+                    // Show Dashboard, Hide Login Form
+                    document.getElementById('authScreen').style.display = 'none';
+                    document.getElementById('dashboardScreen').style.display = 'flex';
+                    
+                    await loadUserTimers();
+                } else {
+                    currentUser = null;
+                    document.getElementById('dashboardScreen').style.display = 'none';
+                    document.getElementById('authScreen').style.display = 'flex';
+                }
+            });
+        }
+
+        // Load personal timers from Database
+        async function loadUserTimers() {
+            const { data, error } = await supabase
+                .from('user_timers')
+                .select('data')
+                .eq('user_id', currentUser.id)
+                .single();
+
+            if (data && data.data) {
+                timerStates = data.data;
+            } else {
+                // First-time signup configuration creation
+                timerStates = {};
+                defaultTimers.forEach(t => {
+                    timerStates[t.id] = {
+                        name: t.name,
+                        totalDuration: t.duration,
+                        timeLeft: t.duration,
+                        endTimestamp: null,
+                        startedAt: 'Waiting',
+                        finishedAt: 'Waiting'
+                    };
+                });
+                await syncCloudData();
+            }
+            render();
+        }
+
+        async function syncCloudData() {
+            if (!currentUser) return;
+            await supabase.from('user_timers').upsert({
+                user_id: currentUser.id,
+                data: timerStates,
+                updated_at: new Date()
+            });
+        }
 
         function formatTime(seconds) {
             if (seconds <= 0) return "00h 00m 00s";
@@ -79,28 +247,22 @@
         function render() {
             const grid = document.getElementById('timerGrid');
             grid.innerHTML = '';
-            
-            // Merge defaults with any custom timers saved
-            const allTimers = [...defaultTimers];
-            Object.keys(timerStates).forEach(id => {
-                if (!defaultTimers.find(t => t.id === id)) {
-                    allTimers.push({ id, name: timerStates[id].name, duration: timerStates[id].duration });
-                }
-            });
 
-            allTimers.forEach(t => {
-                const state = timerStates[t.id] || { endTimestamp: null, startedAt: 'Waiting', finishedAt: 'Waiting' };
-                let remaining = t.duration;
+            Object.keys(timerStates).forEach(id => {
+                const t = timerStates[id];
+                let remaining = t.timeLeft;
                 let status = "Inactive";
 
-                if (state.endTimestamp) {
-                    remaining = Math.ceil((state.endTimestamp - Date.now()) / 1000);
+                if (t.endTimestamp) {
+                    remaining = Math.ceil((t.endTimestamp - Date.now()) / 1000);
                     if (remaining > 0) {
                         status = "Running";
                     } else {
                         remaining = 0;
                         status = "Finished";
                     }
+                } else if (t.timeLeft < t.totalDuration && t.timeLeft > 0) {
+                    status = "Inactive"; // Paused state visual label
                 }
 
                 const card = document.createElement('div');
@@ -109,18 +271,21 @@
                     <div>
                         <div class="card-header">
                             <span class="timer-name">${t.name}</span>
-                            <span class="status-badge">${status}</span>
+                            <div class="header-right">
+                                <span class="status-badge">${status === 'Inactive' && t.timeLeft < t.totalDuration ? 'Paused' : status}</span>
+                                <button class="btn-delete" onclick="deleteTimer('${id}')" title="Delete Timer">🗑</button>
+                            </div>
                         </div>
-                        <div class="time-display" id="time-${t.id}">${formatTime(remaining)}</div>
+                        <div class="time-display" id="time-${id}">${formatTime(remaining)}</div>
                     </div>
                     <div>
                         <div class="card-actions">
-                            <button class="btn-action" onclick="toggleTimer('${t.id}', ${t.duration})">${status === 'Running' ? 'Pause' : 'Start'}</button>
-                            <button class="btn-action" onclick="resetTimer('${t.id}')">Reset</button>
+                            <button class="btn-action" onclick="toggleTimer('${id}')">${status === 'Running' ? 'Pause' : 'Start'}</button>
+                            <button class="btn-action" onclick="resetTimer('${id}')">Reset</button>
                         </div>
                         <div class="card-footer">
-                            <span>Started: ${state.startedAt}</span>
-                            <span id="fin-${t.id}">Finished: ${status === 'Finished' && state.finishedAt === 'Waiting' ? new Date(state.endTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : state.finishedAt}</span>
+                            <span>Started: ${t.startedAt}</span>
+                            <span id="fin-${id}">Finished: ${status === 'Finished' && t.finishedAt === 'Waiting' ? new Date(t.endTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : t.finishedAt}</span>
                         </div>
                     </div>
                 `;
@@ -128,72 +293,89 @@
             });
         }
 
-        window.toggleTimer = function(id, duration) {
-            if (!timerStates[id]) timerStates[id] = { name: defaultTimers.find(t=>t.id===id)?.name || "Custom", duration: duration, endTimestamp: null, startedAt: 'Waiting', finishedAt: 'Waiting' };
-            
-            const state = timerStates[id];
-            let remaining = state.endTimestamp ? Math.ceil((state.endTimestamp - Date.now()) / 1000) : duration;
+        window.toggleTimer = async function(id) {
+            const t = timerStates[id];
+            if (!t) return;
 
-            if (state.endTimestamp && remaining > 0) {
-                // Pause (Clear end time but remember remaining fraction)
-                timerStates[id].duration = remaining;
-                timerStates[id].endTimestamp = null;
+            const now = Date.now();
+            let currentRemaining = t.endTimestamp ? Math.ceil((t.endTimestamp - now) / 1000) : t.timeLeft;
+
+            if (t.endTimestamp && currentRemaining > 0) {
+                // Pause
+                t.timeLeft = currentRemaining;
+                t.endTimestamp = null;
             } else {
-                // Start
-                timerStates[id].endTimestamp = Date.now() + (remaining > 0 ? remaining : duration) * 1000;
-                timerStates[id].startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                timerStates[id].finishedAt = "Waiting";
-            }
-            localStorage.setItem('timerStates', JSON.stringify(timerStates));
-            render();
-        }
-
-        window.resetTimer = function(id) {
-            if (timerStates[id]) {
-                const orig = defaultTimers.find(t=>t.id===id);
-                timerStates[id] = { name: timerStates[id].name, duration: orig ? orig.duration : timerStates[id].duration, endTimestamp: null, startedAt: 'Waiting', finishedAt: 'Waiting' };
-                localStorage.setItem('timerStates', JSON.stringify(timerStates));
-                render();
-            }
-        }
-
-        // Background accurate ticking engine
-        setInterval(() => {
-            Object.keys(timerStates).forEach(id => {
-                const state = timerStates[id];
-                if (state.endTimestamp) {
-                    const remaining = Math.ceil((state.endTimestamp - Date.now()) / 1000);
-                    const displayEl = document.getElementById(`time-${id}`);
-                    if (displayEl) displayEl.textContent = formatTime(remaining);
-                    
-                    if (remaining <= 0 && state.finishedAt === "Waiting") {
-                        render(); // Force a clean UI color shift to finished layout state
-                    }
+                // Start / Resume
+                if (currentRemaining <= 0) {
+                    currentRemaining = t.totalDuration; 
                 }
-            });
-        }, 1000);
+                t.endTimestamp = now + (currentRemaining * 1000);
+                if (t.startedAt === 'Waiting') {
+                    t.startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }
+                t.finishedAt = 'Waiting';
+            }
+            render();
+            await syncCloudData();
+        }
 
-        document.getElementById('addTimerBtn').addEventListener('click', () => {
+        window.resetTimer = async function(id) {
+            const t = timerStates[id];
+            if (!t) return;
+            t.timeLeft = t.totalDuration;
+            t.endTimestamp = null;
+            t.startedAt = 'Waiting';
+            t.finishedAt = 'Waiting';
+            render();
+            await syncCloudData();
+        }
+
+        window.deleteTimer = async function(id) {
+            if (confirm(`Are you sure you want to remove the "${timerStates[id].name}" timer?`)) {
+                delete timerStates[id];
+                render();
+                await syncCloudData();
+            }
+        }
+
+        window.addCustomTimer = async function() {
             const name = prompt("Enter custom cooldown name:");
             const mins = prompt("Enter duration in minutes:", "60");
             if (name && mins) {
                 const id = "custom_" + Date.now();
-                timerStates[id] = { name, duration: parseInt(mins) * 60, endTimestamp: null, startedAt: 'Waiting', finishedAt: 'Waiting' };
-                localStorage.setItem('timerStates', JSON.stringify(timerStates));
+                timerStates[id] = {
+                    name: name,
+                    totalDuration: parseInt(mins) * 60,
+                    timeLeft: parseInt(mins) * 60,
+                    endTimestamp: null,
+                    startedAt: "Waiting",
+                    finishedAt: "Waiting"
+                };
                 render();
+                await syncCloudData();
             }
-        });
+        }
 
-        document.getElementById('removeTimerBtn').addEventListener('click', () => {
-            const keys = Object.keys(timerStates).filter(k => k.startsWith('custom_'));
-            if (keys.length > 0) {
-                delete timerStates[keys[keys.length - 1]];
-                localStorage.setItem('timerStates', JSON.stringify(timerStates));
-                render();
-            }
-        });
-
-        render();
+        // Auto clock ticker
+        setInterval(() => {
+            if (!currentUser) return;
+            Object.keys(timerStates).forEach(id => {
+                const t = timerStates[id];
+                if (t.endTimestamp) {
+                    const remaining = Math.ceil((t.endTimestamp - Date.now()) / 1000);
+                    const displayEl = document.getElementById(`time-${id}`);
+                    if (displayEl) displayEl.textContent = formatTime(remaining);
+                    
+                    if (remaining <= 0 && t.finishedAt === "Waiting") {
+                        t.timeLeft = 0;
+                        t.finishedAt = new Date(t.endTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        t.endTimestamp = null;
+                        render();
+                        syncCloudData();
+                    }
+                }
+            });
+        }, 1000);
     </script>
 </body>
 </html>
