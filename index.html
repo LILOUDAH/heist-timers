@@ -21,18 +21,21 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }
         
-        /* Gated Auth Screen (Visible by default) */
+        /* Gated Auth Screen */
         #authScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 400px; }
         .auth-card { background: var(--bg-card); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 2.5rem 2rem; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
         .auth-card h1 { font-size: 1.8rem; margin-bottom: 0.5rem; background: linear-gradient(45deg, #6366f1, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .auth-card p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; }
+        .auth-card p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
         .auth-card input { width: 100%; padding: 0.8rem 1rem; margin-bottom: 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: var(--bg-main); color: var(--text-main); font-size: 0.95rem; outline: none; }
         .auth-card input:focus { border-color: var(--primary); }
         .auth-card button { width: 100%; padding: 0.8rem; border-radius: 8px; border: none; background: var(--primary); color: white; font-weight: bold; cursor: pointer; font-size: 1rem; margin-top: 0.5rem; transition: background 0.2s; }
         .auth-card button:hover { background: var(--primary-hover); }
-        .switch-text { margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; text-decoration: underline; }
+        .switch-text { margin-top: 1.25rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; text-decoration: underline; }
+        
+        .btn-guest { background: none !important; border: 1px solid rgba(255,255,255,0.1) !important; color: var(--text-muted) !important; margin-top: 1rem; }
+        .btn-guest:hover { border-color: var(--text-muted) !important; color: white !important; }
 
-        /* Timer Dashboard (Hidden by default until login) */
+        /* Timer Dashboard */
         #dashboardScreen { display: none; width: 100%; max-width: 900px; flex-direction: column; height: 100%; min-height: 90vh; }
         
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; width: 100%; }
@@ -84,6 +87,8 @@
             
             <button id="authSubmitBtn" onclick="handleAuthSubmit()">Log In</button>
             <p class="switch-text" id="authSwitch" onclick="toggleAuthMode()">Need an account? Sign Up</p>
+            
+            <button class="btn-guest" onclick="enableGuestMode()">Use Local Mode (No Account)</button>
         </div>
     </div>
 
@@ -113,9 +118,9 @@
         let supabase = null;
         let currentUser = null;
         let isSignUpMode = false;
+        let isGuestMode = false;
         let timerStates = {};
 
-        // Default layout template (assigned to brand new accounts)
         const defaultTimers = [
             { id: "cayo", name: "Cayo", duration: 6 * 3600 },
             { id: "dch", name: "DCH", duration: 6 * 3600 },
@@ -130,12 +135,16 @@
             { id: "dre", name: "Dr Dre", duration: 48 * 60 }
         ];
 
-        // Boot and configuration check
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            checkUserSession();
-        } else {
-            alert("Security Warning: You must supply a valid Supabase URL & Key at the top of the script file to run this gated-account setup!");
+        // Initialize App
+        try {
+            if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                checkUserSession();
+            } else {
+                console.log("No Supabase configuration detected. Running in local/guest mode.");
+            }
+        } catch (e) {
+            console.error("Initialization error:", e);
         }
 
         // Toggle Auth layout styles
@@ -149,6 +158,11 @@
 
         // Handle Signup / Login submissions
         async function handleAuthSubmit() {
+            if (!supabase) {
+                alert("Cannot connect to database! Please make sure you entered your SUPABASE_URL and SUPABASE_ANON_KEY correctly inside index.html.");
+                return;
+            }
+
             const email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
 
@@ -157,60 +171,39 @@
                 return;
             }
 
-            if (isSignUpMode) {
-                const { data, error } = await supabase.auth.signUp({ email, password });
-                if (error) {
-                    alert(error.message);
+            try {
+                if (isSignUpMode) {
+                    const { data, error } = await supabase.auth.signUp({ email, password });
+                    if (error) {
+                        alert("Sign Up Error: " + error.message);
+                    } else {
+                        alert("Registration successful! Check your email for a confirmation link to activate your account, then log in here.");
+                    }
                 } else {
-                    alert("Registration successful! Check your email for a confirmation link to log in.");
+                    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                    if (error) {
+                        alert("Login Error: " + error.message);
+                    }
                 }
-            } else {
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-                if (error) {
-                    alert(error.message);
-                }
+            } catch (e) {
+                alert("An unexpected error occurred during auth: " + e.message);
             }
         }
 
-        async function handleLogout() {
-            await supabase.auth.signOut();
-            timerStates = {};
-            document.getElementById('dashboardScreen').style.display = 'none';
-            document.getElementById('authScreen').style.display = 'flex';
+        // Guest / Local Mode Backup System
+        function enableGuestMode() {
+            isGuestMode = true;
+            document.getElementById('userEmailDisplay').textContent = "Guest Mode (Local)";
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('dashboardScreen').style.display = 'flex';
+            loadLocalTimers();
         }
 
-        // Watch session lifecycle changes
-        function checkUserSession() {
-            supabase.auth.onAuthStateChange(async (event, session) => {
-                if (session) {
-                    currentUser = session.user;
-                    document.getElementById('userEmailDisplay').textContent = currentUser.email;
-                    
-                    // Show Dashboard, Hide Login Form
-                    document.getElementById('authScreen').style.display = 'none';
-                    document.getElementById('dashboardScreen').style.display = 'flex';
-                    
-                    await loadUserTimers();
-                } else {
-                    currentUser = null;
-                    document.getElementById('dashboardScreen').style.display = 'none';
-                    document.getElementById('authScreen').style.display = 'flex';
-                }
-            });
-        }
-
-        // Load personal timers from Database
-        async function loadUserTimers() {
-            const { data, error } = await supabase
-                .from('user_timers')
-                .select('data')
-                .eq('user_id', currentUser.id)
-                .single();
-
-            if (data && data.data) {
-                timerStates = data.data;
+        function loadLocalTimers() {
+            const saved = localStorage.getItem('guest_timerStates');
+            if (saved) {
+                timerStates = JSON.parse(saved);
             } else {
-                // First-time signup configuration creation
                 timerStates = {};
                 defaultTimers.forEach(t => {
                     timerStates[t.id] = {
@@ -222,18 +215,87 @@
                         finishedAt: 'Waiting'
                     };
                 });
-                await syncCloudData();
+                localStorage.setItem('guest_timerStates', JSON.stringify(timerStates));
             }
             render();
         }
 
-        async function syncCloudData() {
-            if (!currentUser) return;
-            await supabase.from('user_timers').upsert({
-                user_id: currentUser.id,
-                data: timerStates,
-                updated_at: new Date()
+        async function handleLogout() {
+            if (isGuestMode) {
+                isGuestMode = false;
+            } else if (supabase) {
+                await supabase.auth.signOut();
+            }
+            timerStates = {};
+            document.getElementById('dashboardScreen').style.display = 'none';
+            document.getElementById('authScreen').style.display = 'flex';
+        }
+
+        // Watch session lifecycle changes
+        function checkUserSession() {
+            supabase.auth.onAuthStateChange(async (event, session) => {
+                if (session) {
+                    currentUser = session.user;
+                    document.getElementById('userEmailDisplay').textContent = currentUser.email;
+                    document.getElementById('authScreen').style.display = 'none';
+                    document.getElementById('dashboardScreen').style.display = 'flex';
+                    await loadUserTimers();
+                } else {
+                    currentUser = null;
+                    if (!isGuestMode) {
+                        document.getElementById('dashboardScreen').style.display = 'none';
+                        document.getElementById('authScreen').style.display = 'flex';
+                    }
+                }
             });
+        }
+
+        // Load personal timers from Database
+        async function loadUserTimers() {
+            try {
+                const { data, error } = await supabase
+                    .from('user_timers')
+                    .select('data')
+                    .eq('user_id', currentUser.id)
+                    .single();
+
+                if (data && data.data) {
+                    timerStates = data.data;
+                } else {
+                    timerStates = {};
+                    defaultTimers.forEach(t => {
+                        timerStates[t.id] = {
+                            name: t.name,
+                            totalDuration: t.duration,
+                            timeLeft: t.duration,
+                            endTimestamp: null,
+                            startedAt: 'Waiting',
+                            finishedAt: 'Waiting'
+                        };
+                    });
+                    await syncCloudData();
+                }
+                render();
+            } catch (err) {
+                console.error("Error loading timers:", err);
+            }
+        }
+
+        async function syncCloudData() {
+            if (isGuestMode) {
+                localStorage.setItem('guest_timerStates', JSON.stringify(timerStates));
+                return;
+            }
+            if (!currentUser || !supabase) return;
+            try {
+                await supabase.from('user_timers').upsert({
+                    user_id: currentUser.id,
+                    data: timerStates,
+                    updated_at: new Date()
+                });
+            } catch (err) {
+                console.error("Cloud sync failed:", err);
+            }
         }
 
         function formatTime(seconds) {
@@ -262,7 +324,7 @@
                         status = "Finished";
                     }
                 } else if (t.timeLeft < t.totalDuration && t.timeLeft > 0) {
-                    status = "Inactive"; // Paused state visual label
+                    status = "Inactive"; 
                 }
 
                 const card = document.createElement('div');
@@ -358,7 +420,7 @@
 
         // Auto clock ticker
         setInterval(() => {
-            if (!currentUser) return;
+            if (!currentUser && !isGuestMode) return;
             Object.keys(timerStates).forEach(id => {
                 const t = timerStates[id];
                 if (t.endTimestamp) {
